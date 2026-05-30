@@ -3,9 +3,10 @@ import { useEffect, useMemo, useState } from "react";
 import Sidebar from "../../components/Navbar";
 import ProtectedRoute from "../../components/ProtectedRoute";
 import {
-	createAgreement,
-	getAgreements,
-	getProperties,
+  createAgreement,
+  getAgreements,
+  getProperties,
+  exportAgreement,
 } from "../../services/authService";
 
 const BLANK = { property: "", tenant: "", start_date: "", end_date: "", rent: "" };
@@ -45,6 +46,8 @@ export default function Agreements() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const [pdfLoading, setPdfLoading] = useState(false);
+  const [pdfError, setPdfError] = useState("");
 
   const propertyNameById = useMemo(() => {
     return Object.fromEntries(properties.map((p) => [p.id, p.title]));
@@ -68,7 +71,10 @@ export default function Agreements() {
   };
 
   useEffect(() => {
-    loadData();
+    const id = setTimeout(() => {
+      loadData();
+    }, 0);
+    return () => clearTimeout(id);
   }, []);
 
   const filtered = agreements.filter((a) => {
@@ -282,7 +288,54 @@ export default function Agreements() {
                 </div>
                 <div className="modal-footer">
                   <button className="btn btn-outline" onClick={() => setDetail(null)}>Close</button>
-                  <button className="btn btn-primary" onClick={() => alert("PDF generation requires backend")}>Download PDF</button>
+                  <button
+                    className="btn btn-primary"
+                    onClick={async () => {
+                      setPdfError("");
+                      setPdfLoading(true);
+                      try {
+                        const payload = {
+                          landlord_name: "Landlord",
+                          landlord_cnic: null,
+                          landlord_contact: null,
+                          tenant_name: detail?.tenant_name || `Tenant ${detail?.tenant || "unknown"}`,
+                          tenant_cnic: null,
+                          tenant_contact: null,
+                          property_address: propertyNameById[detail.property] || `Property #${detail.property}`,
+                          property_type: "Residential",
+                          rent_amount: Number(detail.rent) || 0,
+                          security_deposit: detail?.deposit ?? 0,
+                          payment_due_day: detail?.payment_due_day || 1,
+                          start_date: detail.start_date,
+                          end_date: detail.end_date,
+                          utilities_included: detail?.utilities || null,
+                          special_conditions: detail?.notes || null,
+                        };
+
+                        const res = await exportAgreement(payload);
+                        const blob = new Blob([res.data], { type: "application/pdf" });
+                        const url = window.URL.createObjectURL(blob);
+                        const a = document.createElement("a");
+                        const safeTenant = (payload?.tenant_name || "tenant").toString().replace(/[^a-z0-9_-]/gi, "_");
+                        const filename = `agreement_${safeTenant}_${payload?.start_date || "agreement"}.pdf`;
+                        a.href = url;
+                        a.download = filename;
+                        document.body.appendChild(a);
+                        a.click();
+                        a.remove();
+                        window.URL.revokeObjectURL(url);
+                      } catch (err) {
+                        console.error(err);
+                        setPdfError("Failed to download PDF.");
+                      } finally {
+                        setPdfLoading(false);
+                      }
+                    }}
+                    disabled={pdfLoading}
+                  >
+                    {pdfLoading ? "Generating PDF..." : "Download PDF"}
+                  </button>
+                  {pdfError && <p className="error-text">⚠ {pdfError}</p>}
                 </div>
               </div>
             </div>

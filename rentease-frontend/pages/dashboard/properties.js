@@ -16,9 +16,9 @@ const emptyForm = {
 };
 
 const getUserIdFromToken = () => {
+	if (typeof window === "undefined" || !window.localStorage) return null;
 	const token = localStorage.getItem("re_token");
 	if (!token) return null;
-
 	try {
 		const decoded = jwtDecode(token);
 		return decoded?.user_id || decoded?.userId || decoded?.id || null;
@@ -50,8 +50,11 @@ export default function Properties() {
 		}
 	};
 
-	useEffect(() => {
-		loadProperties();
+	 useEffect(() => {
+		 const id = setTimeout(() => {
+		   loadProperties();
+		 }, 0);
+		 return () => clearTimeout(id);
 	}, []);
 
 	const filteredProperties = useMemo(() => {

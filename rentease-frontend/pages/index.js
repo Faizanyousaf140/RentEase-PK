@@ -27,8 +27,8 @@ export default function Home() {
   return (
     <div className="landing-hero">
       {/* LEFT — dark green panel */}
-      <div className="hero-left">
-        <p className="hero-tagline">Pakistan's rental management platform</p>
+        <div className="hero-left">
+          <p className="hero-tagline">Pakistan&apos;s rental management platform</p>
 
         <h1 className="hero-title">
           Smart Renting,<br />

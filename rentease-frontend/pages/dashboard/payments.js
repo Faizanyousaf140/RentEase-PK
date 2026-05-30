@@ -58,7 +58,10 @@ export default function Payments() {
   };
 
   useEffect(() => {
-    loadData();
+    const id = setTimeout(() => {
+      loadData();
+    }, 0);
+    return () => clearTimeout(id);
   }, []);
 
   const filtered = payments.filter((p) => {
@@ -137,7 +140,7 @@ export default function Payments() {
               <div className="stat-card-icon" style={{ background: "var(--accent-dim)" }}>📊</div>
               <div className="stat-card-label">Collection Rate</div>
               <div className="stat-card-value" style={{ fontSize: "1.4rem" }}>
-                {Math.round((payments.filter(p => p.status === "paid").length / payments.length) * 100)}%
+                {payments.length === 0 ? 0 : Math.round((payments.filter(p => p.status === "paid").length / payments.length) * 100)}%
               </div>
               <div className="stat-card-delta">{payments.filter(p => p.status === "paid").length} of {payments.length} paid</div>
             </div>
@@ -199,10 +202,10 @@ export default function Payments() {
           <div className="card mt-3">
             <div className="section-header" style={{ marginBottom: "0.75rem" }}>
               <h4>Collection Progress (This Dataset)</h4>
-              <span className="muted-sm">{Math.round((payments.filter(p => p.status === "paid").length / payments.length) * 100)}% collected</span>
+              <span className="muted-sm">{payments.length === 0 ? 0 : Math.round((payments.filter(p => p.status === "paid").length / payments.length) * 100)}% collected</span>
             </div>
             <div className="progress-bar-wrap">
-              <div className="progress-bar-fill green" style={{ width: `${(payments.filter(p => p.status === "paid").length / payments.length) * 100}%` }} />
+              <div className="progress-bar-fill green" style={{ width: `${payments.length === 0 ? 0 : (payments.filter(p => p.status === "paid").length / payments.length) * 100}%` }} />
             </div>
           </div>
 

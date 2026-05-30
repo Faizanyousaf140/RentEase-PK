@@ -58,7 +58,10 @@ export default function Notices() {
   };
 
   useEffect(() => {
-    loadData();
+    const id = setTimeout(() => {
+      loadData();
+    }, 0);
+    return () => clearTimeout(id);
   }, []);
 
   const filtered = notices.filter((n) => {
