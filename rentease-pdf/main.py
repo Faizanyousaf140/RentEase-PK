@@ -10,6 +10,7 @@ import time
 import uuid
 from datetime import datetime, timezone
 from io import BytesIO
+from urllib.parse import quote
 
 from fastapi import FastAPI, Request, status
 from fastapi.exceptions import RequestValidationError
@@ -155,9 +156,14 @@ def create_pdf(data: AgreementRequest):
             content={"detail": "PDF generator returned invalid response buffer."},
         )
 
-    filename = f"agreement_{data.tenant_name.replace(' ', '_').lower()}_{data.start_date}.pdf"
+    safe_tenant = "".join(
+        char if char.isalnum() or char in {"-", "_"} else "_"
+        for char in data.tenant_name.strip().lower()
+    ).strip("_") or "tenant"
+    filename = f"agreement_{safe_tenant}_{data.start_date}.pdf"
+    quoted_filename = quote(filename)
     headers = {
-        "Content-Disposition": f'attachment; filename="{filename}"',
+        "Content-Disposition": f"attachment; filename=\"{filename}\"; filename*=UTF-8''{quoted_filename}",
         "Cache-Control": "no-store",
         "X-Content-Type-Options": "nosniff",
     }

@@ -45,6 +45,14 @@ RED    = colors.HexColor("#c0392b")
 PAGE_W, PAGE_H = A4
 
 
+def _ordinal(day: int) -> str:
+    if 11 <= day % 100 <= 13:
+        suffix = "th"
+    else:
+        suffix = {1: "st", 2: "nd", 3: "rd"}.get(day % 10, "th")
+    return f"{day}{suffix}"
+
+
 # ── Style registry ────────────────────────────────────────────────────────────
 def _build_styles() -> dict:
     base = getSampleStyleSheet()
@@ -233,7 +241,7 @@ def _info_table(rows: list, styles_dict: dict) -> Table:
 # ── Summary box (dark card) ───────────────────────────────────────────────────
 def _summary_table(data: AgreementRequest, styles_dict: dict) -> Table:
     def fmt_pkr(n):
-        return f"PKR {n:,}" if n else "—"
+        return f"PKR {n:,}" if n is not None else "—"
 
     start = date.fromisoformat(data.start_date)
     end   = date.fromisoformat(data.end_date)
@@ -244,9 +252,9 @@ def _summary_table(data: AgreementRequest, styles_dict: dict) -> Table:
 
     cells = [
         ("MONTHLY RENT",     fmt_pkr(data.rent_amount)),
-        ("SECURITY DEPOSIT", fmt_pkr(data.security_deposit) if data.security_deposit else "—"),
+        ("SECURITY DEPOSIT", fmt_pkr(data.security_deposit)),
         ("DURATION",         f"{months} months"),
-        ("PAYMENT DUE",      f"{data.payment_due_day}st of each month"),
+        ("PAYMENT DUE",      f"{_ordinal(data.payment_due_day)} of each month"),
     ]
 
     row = [[Paragraph(lbl, label_style), Paragraph(val, value_style)] for lbl, val in cells]
@@ -344,7 +352,7 @@ CLAUSES = [
 
 
 def _build_clauses(data: AgreementRequest, styles_dict: dict) -> List:
-    deposit_str = f"PKR {data.security_deposit:,}" if data.security_deposit else "nil"
+    deposit_str = f"PKR {data.security_deposit:,}" if data.security_deposit is not None else "nil"
     utilities_str = data.utilities_included or "none — all utilities are the Tenant's responsibility"
     prop_type = (data.property_type or "Residential").lower()
 
