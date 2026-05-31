@@ -3,17 +3,26 @@ import Link from "next/link";
 import { useRouter } from "next/router";
 import { AuthContext } from "../context/AuthContext";
 
-const NAV = [
-  { href: "/dashboard",             icon: "⬛", label: "Overview" },
-  { href: "/dashboard/properties",  icon: "🏠", label: "Properties" },
-  { href: "/dashboard/agreements",  icon: "📄", label: "Agreements" },
-  { href: "/dashboard/payments",    icon: "💳", label: "Payments" },
-  { href: "/dashboard/notices",     icon: "🔔", label: "Notices" },
+const NAV_LANDLORD = [
+  { href: "/dashboard", icon: "⬛", label: "Overview" },
+  { href: "/dashboard/properties", icon: "🏠", label: "Properties" },
+  { href: "/dashboard/agreements", icon: "📄", label: "Requests" },
+  { href: "/dashboard/payments", icon: "💳", label: "Payments" },
+  { href: "/dashboard/notices", icon: "🔔", label: "Notices" },
+];
+
+const NAV_TENANT = [
+  { href: "/dashboard", icon: "⬛", label: "Overview" },
+  { href: "/dashboard/properties", icon: "🏠", label: "Available Properties" },
+  { href: "/dashboard/agreements", icon: "📄", label: "My Agreements" },
+  { href: "/dashboard/payments", icon: "💳", label: "Payments" },
+  { href: "/dashboard/notices", icon: "🔔", label: "Notices" },
 ];
 
 export default function Sidebar() {
   const { username, role, logout } = useContext(AuthContext);
   const router = useRouter();
+  const NAV = role === "landlord" ? NAV_LANDLORD : NAV_TENANT;
 
   const handleLogout = () => {
     logout();

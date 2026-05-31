@@ -3,7 +3,7 @@ import Link from "next/link";
 import { useRouter } from "next/router";
 import { jwtDecode } from "jwt-decode";
 import { AuthContext } from "../context/AuthContext";
-import { loginUser } from "../services/authService";
+import { getMe, loginUser } from "../services/authService";
 
 export default function Login() {
   const [form, setForm] = useState({ username: "", password: "" });
@@ -20,16 +20,20 @@ export default function Login() {
       const res = await loginUser(form);
       const accessToken = res.data?.access;
       const decoded = accessToken ? jwtDecode(accessToken) : {};
-      const role =
-        res.data?.role ||
-        res.data?.user?.role ||
-        decoded?.role ||
-        decoded?.user_role ||
-        "tenant";
-      const username =
-        res.data?.username ||
-        res.data?.user?.username ||
-        form.username;
+      if (accessToken) {
+        localStorage.setItem("re_token", accessToken);
+      }
+
+      let role = res.data?.role || res.data?.user?.role || decoded?.role || decoded?.user_role || "tenant";
+      let username = res.data?.username || res.data?.user?.username || form.username;
+
+      try {
+        const me = await getMe();
+        role = me.data?.role || role;
+        username = me.data?.username || username;
+      } catch {
+        // Fall back to login response / token data if /auth/me/ is unavailable.
+      }
 
       login(accessToken, role, username);
       router.push("/dashboard");

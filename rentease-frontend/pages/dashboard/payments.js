@@ -1,11 +1,13 @@
-import { useEffect, useMemo, useState } from "react";
+import { useContext, useEffect, useMemo, useState } from "react";
 import Sidebar from "../../components/Navbar";
 import ProtectedRoute from "../../components/ProtectedRoute";
+import { AuthContext } from "../../context/AuthContext";
 import {
 	createPayment,
 	getAgreements,
 	getPayments,
 	getProperties,
+  updatePayment,
 } from "../../services/authService";
 
 const BLANK = { agreement: "", amount: "", month: "", status: "paid" };
@@ -13,10 +15,12 @@ const BLANK = { agreement: "", amount: "", month: "", status: "paid" };
 const statusBadge = (s) => {
   if (s === "paid")    return <span className="badge badge-green badge-dot">Paid</span>;
   if (s === "pending") return <span className="badge badge-orange badge-dot">Pending</span>;
+  if (s === "overdue") return <span className="badge badge-red badge-dot">Overdue</span>;
   return <span className="badge badge-neutral">Unknown</span>;
 };
 
 export default function Payments() {
+  const { role } = useContext(AuthContext);
   const [payments, setPayments] = useState([]);
   const [agreements, setAgreements] = useState([]);
   const [properties, setProperties] = useState([]);
@@ -91,7 +95,7 @@ export default function Payments() {
         agreement: Number(form.agreement),
         amount: Number(form.amount),
         month: form.month,
-        status: form.status,
+        status: role === "tenant" ? "pending" : form.status,
       });
       setForm(BLANK);
       setModal(false);
@@ -107,6 +111,19 @@ export default function Payments() {
     }
   };
 
+  const confirmPayment = async (paymentId) => {
+    setSaving(true);
+    setError("");
+    try {
+      await updatePayment(paymentId, { status: "paid" });
+      await loadData();
+    } catch (apiError) {
+      setError(apiError?.response?.data?.detail || "Failed to confirm payment.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
   return (
     <ProtectedRoute>
       <div className="dashboard-shell">
@@ -115,9 +132,11 @@ export default function Payments() {
           <div className="page-header">
             <div className="page-header-text">
               <h1>Payments</h1>
-              <p className="muted">Full rent payment history and status.</p>
+              <p className="muted">{role === "tenant" ? "Mark payments and view statuses." : "Confirm tenant payments and review history."}</p>
             </div>
-            <button className="btn btn-primary" onClick={() => setModal(true)}>+ Log Payment</button>
+            {role === "tenant" && (
+              <button className="btn btn-primary" onClick={() => setModal(true)}>+ Mark Payment</button>
+            )}
           </div>
 
           {error ? <p className="error-text">⚠ {error}</p> : null}
@@ -149,7 +168,7 @@ export default function Payments() {
           {/* Tabs + search */}
           <div className="flex gap-2 items-center mb-3" style={{ flexWrap: "wrap" }}>
             <div className="tabs">
-              {["all","paid","pending"].map((t) => (
+              {["all","paid","pending","overdue"].map((t) => (
                 <button key={t} className={`tab${tab === t ? " active" : ""}`} onClick={() => setTab(t)}>
                   {t[0].toUpperCase() + t.slice(1)}
                 </button>
@@ -191,7 +210,16 @@ export default function Payments() {
                     <td className="mono color-gold">₨ {Number(p.amount).toLocaleString()}</td>
                     <td style={{ color: "var(--text-2)", fontSize: "0.82rem" }}>{p.created_at ? new Date(p.created_at).toISOString().slice(0, 10) : "—"}</td>
                     <td><span className="badge badge-neutral">Agreement #{p.agreement}</span></td>
-                    <td>{statusBadge(p.status)}</td>
+                    <td>
+                      {statusBadge(p.status)}
+                      {role === "landlord" && p.status === "pending" && (
+                        <div style={{ marginTop: 8 }}>
+                          <button className="btn btn-primary btn-sm" onClick={() => confirmPayment(p.id)} disabled={saving}>
+                            Confirm
+                          </button>
+                        </div>
+                      )}
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -214,7 +242,7 @@ export default function Payments() {
             <div className="overlay" onClick={() => setModal(false)}>
               <div className="modal" onClick={(e) => e.stopPropagation()}>
                 <div className="modal-header">
-                  <h3>Log Payment</h3>
+                  <h3>{role === "tenant" ? "Mark Payment" : "Log Payment"}</h3>
                   <button className="modal-close" onClick={() => setModal(false)}>✕</button>
                 </div>
                 {error ? <p className="error-text">⚠ {error}</p> : null}
@@ -233,10 +261,14 @@ export default function Payments() {
                     </div>
                     <div className="form-group">
                       <label className="form-label">Status</label>
-                      <select className="field" value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value })}>
-                        <option value="paid">Paid</option>
-                        <option value="pending">Pending</option>
-                      </select>
+                      {role === "tenant" ? (
+                        <input className="field" value="Pending confirmation" disabled />
+                      ) : (
+                        <select className="field" value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value })}>
+                          <option value="paid">Paid</option>
+                          <option value="pending">Pending</option>
+                        </select>
+                      )}
                     </div>
                   </div>
                   <div className="field-row">
@@ -252,7 +284,7 @@ export default function Payments() {
                 </div>
                 <div className="modal-footer">
                   <button className="btn btn-outline" onClick={() => setModal(false)}>Cancel</button>
-                  <button className="btn btn-primary" onClick={save} disabled={saving}>{saving ? "Logging..." : "Log Payment"}</button>
+                  <button className="btn btn-primary" onClick={save} disabled={saving}>{saving ? "Saving..." : role === "tenant" ? "Mark Payment" : "Log Payment"}</button>
                 </div>
               </div>
             </div>

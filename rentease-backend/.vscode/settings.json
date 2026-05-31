@@ -1,0 +1,8 @@
+{
+  "python.defaultInterpreterPath": "${workspaceFolder}/rentease-pdf/venv/Scripts/python.exe",
+  "python.analysis.extraPaths": [
+    "${workspaceFolder}/rentease-backend",
+    "${workspaceFolder}/rentease-backend/venv/Lib/site-packages",
+    "${workspaceFolder}/rentease-pdf/venv/Lib/site-packages"
+  ]
+}

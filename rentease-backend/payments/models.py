@@ -7,6 +7,7 @@ class Payment(models.Model):
     STATUS_CHOICES = (
         ("paid", "Paid"),
         ("pending", "Pending"),
+        ("overdue", "Overdue"),
     )
 
     agreement = models.ForeignKey(Agreement, on_delete=models.CASCADE)

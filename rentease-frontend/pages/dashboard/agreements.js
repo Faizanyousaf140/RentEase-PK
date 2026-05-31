@@ -1,17 +1,23 @@
 import { jwtDecode } from "jwt-decode";
-import { useEffect, useMemo, useState } from "react";
+import { useContext, useEffect, useMemo, useState } from "react";
 import Sidebar from "../../components/Navbar";
 import ProtectedRoute from "../../components/ProtectedRoute";
+import { AuthContext } from "../../context/AuthContext";
 import {
+  approveAgreement,
   createAgreement,
   getAgreements,
   getProperties,
+  getUsers,
   exportAgreement,
+  negotiateAgreement,
+  rejectAgreement,
 } from "../../services/authService";
 
-const BLANK = { property: "", tenant: "", start_date: "", end_date: "", rent: "" };
+const BLANK = { property: "", tenant: "", start_date: "", end_date: "", rent: "", proposed_rent: "", advance_amount: "", tenant_message: "" };
 
 const getUserIdFromToken = () => {
+  if (typeof window === "undefined" || !window.localStorage) return null;
 	const token = localStorage.getItem("re_token");
 	if (!token) return null;
 
@@ -24,20 +30,37 @@ const getUserIdFromToken = () => {
 };
 
 const agreementStatus = (agreement) => {
-	if (!agreement?.end_date) return "active";
-	const now = new Date();
-	const end = new Date(agreement.end_date);
-	return end < now ? "expired" : "active";
+  const status = agreement?.status;
+  if (["pending", "rejected", "terminated", "expired", "active"].includes(status)) {
+    if (status === "active" && agreement?.end_date) {
+      const now = new Date();
+      const end = new Date(agreement.end_date);
+      if (end < now) {
+        return "expired";
+      }
+    }
+    return status;
+  }
+
+  if (!agreement?.end_date) return "active";
+  const now = new Date();
+  const end = new Date(agreement.end_date);
+  return end < now ? "expired" : "active";
 };
 
 const statusBadge = (status) => {
+  if (status === "pending") return <span className="badge badge-orange">Pending</span>;
 	if (status === "active") return <span className="badge badge-green">Active</span>;
-	return <span className="badge badge-red">Expired</span>;
+  if (status === "rejected") return <span className="badge badge-red">Rejected</span>;
+  if (status === "expired") return <span className="badge badge-red">Expired</span>;
+  return <span className="badge badge-neutral">Unknown</span>;
 };
 
 export default function Agreements() {
+  const { role } = useContext(AuthContext);
   const [agreements, setAgreements] = useState([]);
   const [properties, setProperties] = useState([]);
+  const [users, setUsers] = useState([]);
   const [modal, setModal] = useState(false);
   const [detail, setDetail] = useState(null);
   const [form, setForm] = useState(BLANK);
@@ -48,21 +71,31 @@ export default function Agreements() {
   const [error, setError] = useState("");
   const [pdfLoading, setPdfLoading] = useState(false);
   const [pdfError, setPdfError] = useState("");
+  const [actionLoadingId, setActionLoadingId] = useState(null);
+  const [negotiateModal, setNegotiateModal] = useState(false);
+  const [negotiateAgreementItem, setNegotiateAgreementItem] = useState(null);
+  const [negotiateForm, setNegotiateForm] = useState({ proposed_rent: "", advance_amount: "", tenant_message: "" });
 
   const propertyNameById = useMemo(() => {
     return Object.fromEntries(properties.map((p) => [p.id, p.title]));
   }, [properties]);
 
+  const userById = useMemo(() => {
+    return Object.fromEntries(users.map((u) => [u.id, u]));
+  }, [users]);
+
   const loadData = async () => {
     setLoading(true);
     setError("");
     try {
-      const [agreementsRes, propertiesRes] = await Promise.all([
+      const [agreementsRes, propertiesRes, usersRes] = await Promise.all([
         getAgreements(),
         getProperties(),
+        getUsers(),
       ]);
       setAgreements(Array.isArray(agreementsRes.data) ? agreementsRes.data : []);
       setProperties(Array.isArray(propertiesRes.data) ? propertiesRes.data : []);
+      setUsers(Array.isArray(usersRes.data) ? usersRes.data : []);
     } catch (apiError) {
       setError(apiError?.response?.data?.detail || "Failed to load agreements.");
     } finally {
@@ -87,7 +120,14 @@ export default function Agreements() {
     return matchesSearch && status === tab;
   });
 
+  const pendingCount = agreements.filter((a) => agreementStatus(a) === "pending").length;
+
   const save = async () => {
+    if (role !== "landlord") {
+      setError("Only landlords can create agreements.");
+      return;
+    }
+
     if (!form.property || !form.tenant || !form.start_date || !form.end_date || !form.rent) {
       setError("All fields are required.");
       return;
@@ -109,6 +149,9 @@ export default function Agreements() {
         rent: Number(form.rent),
         start_date: form.start_date,
         end_date: form.end_date,
+        proposed_rent: form.proposed_rent === "" ? Number(form.rent) : Number(form.proposed_rent),
+        advance_amount: form.advance_amount === "" ? 0 : Number(form.advance_amount),
+        tenant_message: form.tenant_message,
       });
       setForm(BLANK);
       setModal(false);
@@ -124,6 +167,66 @@ export default function Agreements() {
     }
   };
 
+  const handleAgreementAction = async (agreementId, action) => {
+    setActionLoadingId(agreementId);
+    setError("");
+    try {
+      if (action === "approve") {
+        await approveAgreement(agreementId);
+      } else {
+        await rejectAgreement(agreementId);
+      }
+      await loadData();
+    } catch (apiError) {
+      setError(apiError?.response?.data?.detail || `Failed to ${action} agreement.`);
+    } finally {
+      setActionLoadingId(null);
+    }
+  };
+
+  const openNegotiateModal = (agreement) => {
+    setNegotiateAgreementItem(agreement);
+    setNegotiateForm({
+      proposed_rent: agreement?.proposed_rent ?? agreement?.rent ?? "",
+      advance_amount: agreement?.advance_amount ?? 0,
+      tenant_message: agreement?.tenant_message ?? "",
+    });
+    setError("");
+    setNegotiateModal(true);
+  };
+
+  const closeNegotiateModal = () => {
+    setNegotiateModal(false);
+    setNegotiateAgreementItem(null);
+    setNegotiateForm({ proposed_rent: "", advance_amount: "", tenant_message: "" });
+    setError("");
+  };
+
+  const submitNegotiation = async (event) => {
+    event.preventDefault();
+
+    if (!negotiateAgreementItem || negotiateForm.proposed_rent === "") {
+      setError("Proposed rent is required.");
+      return;
+    }
+
+    setActionLoadingId(negotiateAgreementItem.id);
+    setError("");
+    try {
+      await negotiateAgreement(negotiateAgreementItem.id, {
+        proposed_rent: Number(negotiateForm.proposed_rent),
+        advance_amount: negotiateForm.advance_amount === "" ? 0 : Number(negotiateForm.advance_amount),
+        tenant_message: negotiateForm.tenant_message,
+      });
+      await loadData();
+      closeNegotiateModal();
+    } catch (apiError) {
+      setError(apiError?.response?.data?.detail || "Failed to send negotiation.");
+    } finally {
+      setActionLoadingId(null);
+    }
+  };
+
   return (
     <ProtectedRoute>
       <div className="dashboard-shell">
@@ -132,9 +235,11 @@ export default function Agreements() {
           <div className="page-header">
             <div className="page-header-text">
               <h1>Agreements</h1>
-              <p className="muted">{agreements.filter((a) => agreementStatus(a) === "active").length} active · {agreements.length} total</p>
+              <p className="muted">{pendingCount} pending · {agreements.filter((a) => agreementStatus(a) === "active").length} active · {agreements.length} total</p>
             </div>
-            <button className="btn btn-primary" onClick={() => setModal(true)}>+ New Agreement</button>
+            {role === "landlord" && (
+              <button className="btn btn-primary" onClick={() => setModal(true)}>+ New Agreement</button>
+            )}
           </div>
 
           {error ? <p className="error-text">⚠ {error}</p> : null}
@@ -142,7 +247,7 @@ export default function Agreements() {
           {/* Tabs + search */}
           <div className="flex gap-2 items-center mb-3" style={{ flexWrap: "wrap" }}>
             <div className="tabs">
-              {["all","active","expired"].map((t) => (
+              {["all","pending","active","rejected","expired"].map((t) => (
                 <button key={t} className={`tab${tab === t ? " active" : ""}`} onClick={() => setTab(t)}>
                   {t[0].toUpperCase() + t.slice(1)}
                 </button>
@@ -195,6 +300,29 @@ export default function Agreements() {
                       <td>
                         <div className="row-actions">
                           <button className="btn btn-ghost btn-sm btn-icon" onClick={() => setDetail(a)} title="View">👁️</button>
+                          {role === "tenant" && ["pending", "rejected"].includes(agreementStatus(a)) && (
+                            <button className="btn btn-outline btn-sm" onClick={() => openNegotiateModal(a)} disabled={actionLoadingId === a.id}>
+                              Negotiate
+                            </button>
+                          )}
+                          {role === "landlord" && agreementStatus(a) === "pending" && (
+                            <>
+                              <button
+                                className="btn btn-primary btn-sm"
+                                onClick={() => handleAgreementAction(a.id, "approve")}
+                                disabled={actionLoadingId === a.id}
+                              >
+                                Approve
+                              </button>
+                              <button
+                                className="btn btn-outline btn-sm"
+                                onClick={() => handleAgreementAction(a.id, "reject")}
+                                disabled={actionLoadingId === a.id}
+                              >
+                                Reject
+                              </button>
+                            </>
+                          )}
                         </div>
                       </td>
                     </tr>
@@ -205,7 +333,7 @@ export default function Agreements() {
           </div>
 
           {/* Create modal */}
-          {modal && (
+          {modal && role === "landlord" && (
             <div className="overlay" onClick={() => setModal(false)}>
               <div className="modal" onClick={(e) => e.stopPropagation()}>
                 <div className="modal-header">
@@ -276,6 +404,8 @@ export default function Agreements() {
                       ["Start",      detail.start_date],
                       ["End",        detail.end_date],
                       ["Rent/mo",    `₨ ${Number(detail.rent).toLocaleString()}`],
+                      ["Advance",    `₨ ${Number(detail.advance_amount || 0).toLocaleString()}`],
+                      ["Proposed Rent", detail.proposed_rent ? `₨ ${Number(detail.proposed_rent).toLocaleString()}` : "—"],
                     ].map(([k, v]) => (
                       <div key={k}>
                         <div className="form-label">{k}</div>
@@ -284,6 +414,10 @@ export default function Agreements() {
                         </div>
                       </div>
                     ))}
+                  </div>
+                  <div className="form-group">
+                    <div className="form-label">Tenant Message</div>
+                    <div className="muted" style={{ whiteSpace: "pre-wrap" }}>{detail.tenant_message || "—"}</div>
                   </div>
                 </div>
                 <div className="modal-footer">
@@ -294,12 +428,16 @@ export default function Agreements() {
                       setPdfError("");
                       setPdfLoading(true);
                       try {
+                        const landlord = userById[detail?.landlord];
+                        const tenant = userById[detail?.tenant];
                         const payload = {
-                          landlord_name: "Landlord",
-                          landlord_cnic: null,
+                          landlord_name:
+                            landlord?.full_name || landlord?.username || "Landlord",
+                          landlord_cnic: landlord?.cnic || null,
                           landlord_contact: null,
-                          tenant_name: detail?.tenant_name || `Tenant ${detail?.tenant || "unknown"}`,
-                          tenant_cnic: null,
+                          tenant_name:
+                            tenant?.full_name || tenant?.username || detail?.tenant_name || `Tenant ${detail?.tenant || "unknown"}`,
+                          tenant_cnic: tenant?.cnic || null,
                           tenant_contact: null,
                           property_address: propertyNameById[detail.property] || `Property #${detail.property}`,
                           property_type: "Residential",
@@ -310,6 +448,10 @@ export default function Agreements() {
                           end_date: detail.end_date,
                           utilities_included: detail?.utilities || null,
                           special_conditions: detail?.notes || null,
+                          witness_1_name: "",
+                          witness_1_cnic: null,
+                          witness_2_name: "",
+                          witness_2_cnic: null,
                         };
 
                         const res = await exportAgreement(payload);
@@ -337,6 +479,38 @@ export default function Agreements() {
                   </button>
                   {pdfError && <p className="error-text">⚠ {pdfError}</p>}
                 </div>
+              </div>
+            </div>
+          )}
+
+          {negotiateModal && negotiateAgreementItem && (
+            <div className="overlay" onClick={closeNegotiateModal}>
+              <div className="modal" onClick={(e) => e.stopPropagation()}>
+                <div className="modal-header">
+                  <h3>Negotiate Agreement</h3>
+                  <button className="modal-close" onClick={closeNegotiateModal}>✕</button>
+                </div>
+                <form className="form-stack" onSubmit={submitNegotiation}>
+                  <div className="field-row">
+                    <div className="form-group">
+                      <label className="form-label">Proposed Rent (PKR)</label>
+                      <input className="field" type="number" value={negotiateForm.proposed_rent} onChange={(e) => setNegotiateForm({ ...negotiateForm, proposed_rent: e.target.value })} required />
+                    </div>
+                    <div className="form-group">
+                      <label className="form-label">Advance Amount (PKR)</label>
+                      <input className="field" type="number" value={negotiateForm.advance_amount} onChange={(e) => setNegotiateForm({ ...negotiateForm, advance_amount: e.target.value })} />
+                    </div>
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label">Message</label>
+                    <textarea className="field" rows={3} value={negotiateForm.tenant_message} onChange={(e) => setNegotiateForm({ ...negotiateForm, tenant_message: e.target.value })} />
+                  </div>
+                  {error ? <p className="error-text">⚠ {error}</p> : null}
+                  <div className="modal-footer">
+                    <button className="btn btn-outline" type="button" onClick={closeNegotiateModal}>Cancel</button>
+                    <button className="btn btn-primary" type="submit" disabled={actionLoadingId === negotiateAgreementItem.id}>{actionLoadingId === negotiateAgreementItem.id ? "Sending..." : "Send Counter Offer"}</button>
+                  </div>
+                </form>
               </div>
             </div>
           )}

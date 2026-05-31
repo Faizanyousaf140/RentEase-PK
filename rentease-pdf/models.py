@@ -36,6 +36,10 @@ class AgreementRequest(BaseModel):
     # ── Optional extras ──────────────────────────────────────
     utilities_included: Optional[str] = Field(None, examples=["Water, Electricity"])
     special_conditions: Optional[str] = Field(None, max_length=1000)
+    witness_1_name: Optional[str] = Field(None, max_length=120)
+    witness_1_cnic: Optional[str] = Field(None, examples=["35202-1234567-1"])
+    witness_2_name: Optional[str] = Field(None, max_length=120)
+    witness_2_cnic: Optional[str] = Field(None, examples=["35202-7654321-3"])
 
     # ── Validators ───────────────────────────────────────────
     @field_validator("start_date", "end_date")
